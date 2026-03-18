@@ -36,9 +36,6 @@ server
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        sub_filter '</body>' '<script src="/chat/home-entry.js"></script></body>';
-        sub_filter_once on;
-        sub_filter_types text/html;
     }
 
     location /v1/responses {
