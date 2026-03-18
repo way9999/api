@@ -1,0 +1,17 @@
+[     297ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:19000/api/config:0
+[     298ms] [ERROR] Web Fetch Error [load_config]: HTTP Error 401 @ http://127.0.0.1:19000/assets/index-BRtPPHVV.js:11
+[    2297ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:19000/api/system/updates/check-status:0
+[    2298ms] [ERROR] Web Fetch Error [should_check_updates]: HTTP Error 401 @ http://127.0.0.1:19000/assets/index-BRtPPHVV.js:11
+[    2298ms] [ERROR] Failed to check update settings: HTTP Error 401 @ http://127.0.0.1:19000/assets/index-BRtPPHVV.js:271
+[  212723ms] [ERROR] Command [get_droid_sync_status] is not yet mapped for Web mode. Failing. @ http://127.0.0.1:19000/assets/index-BRtPPHVV.js:11
+[  212734ms] [ERROR] Failed to check Droid status: Error: Command [get_droid_sync_status] not supported in Web mode.
+    at ge (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:12:123038)
+    at http://127.0.0.1:19000/assets/index-BRtPPHVV.js:147:54955
+    at http://127.0.0.1:19000/assets/index-BRtPPHVV.js:147:56660
+    at ld (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:93392)
+    at EC (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:108696)
+    at ai (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:108580)
+    at EC (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:109462)
+    at ai (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:108580)
+    at EC (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:109462)
+    at ai (http://127.0.0.1:19000/assets/index-BRtPPHVV.js:8:108580) @ http://127.0.0.1:19000/assets/index-BRtPPHVV.js:146

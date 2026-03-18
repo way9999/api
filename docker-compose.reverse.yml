@@ -1,0 +1,545 @@
+# ============================================================
+# docker-compose.reverse.yml
+# 逆向工程层 —— API 中转站的逆向代理服务
+# 与主 docker-compose.yml 共享同一网络 (api-network)
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # antigravity-manager — Antigravity 多账号管理与逆向代理
+  # 覆盖模型:
+  #   - Claude Sonnet 4.5 / Opus 4.5 (Anthropic)
+  #   - Gemini 3 Pro High / Flash (Google)
+  # 特性:
+  #   - 智能分层路由，按账号类型(Ultra/Pro/Free)自动优先级排序
+  #   - 实时配额监控，毫秒级自动切号（429/401 自动重试）
+  #   - Web 管理后台 (端口 8045)
+  #   - 同时支持 OpenAI + Anthropic 协议
+  # ----------------------------------------------------------
+  antigravity-manager:
+    image: lbjlaq/antigravity-manager:latest
+    container_name: antigravity-manager
+    restart: unless-stopped
+    ports:
+      # API + Web 管理后台，仅监听本地回环地址
+      - "127.0.0.1:9100:8045"
+    volumes:
+      # 持久化数据目录（账号配置、gui_config.json 等）
+      - ./data/antigravity:/root/.antigravity_tools
+    environment:
+      # 访问密钥，用于鉴权中转请求（格式 sk-xxx）
+      - API_KEY=${ANTIGRAVITY_API_KEY}
+      # Web 管理后台登录密码（留空则使用 API_KEY）
+      - WEB_PASSWORD=${ANTIGRAVITY_WEB_PASSWORD:-}
+      # 最大请求体大小（100MB，支持 4K 图片识别）
+      - ABV_MAX_BODY_SIZE=104857600
+      # 通过 Resin 代理池出站访问 Google 服务
+      - ALL_PROXY=http://resin:2260
+      - HTTP_PROXY=http://resin:2260
+      - HTTPS_PROXY=http://resin:2260
+      - NO_PROXY=localhost,127.0.0.1,mysql,redis,new-api,kiro2api,kirocli2api,cliproxyapi,cursor-api,copilot-api,resin
+      # 时区设置
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      resin:
+        condition: service_started
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # cliproxyapi — CLI 工具逆向代理服务（CLIProxyAPI / router-for.me）
+  # 覆盖逆向源:
+  #   - Codex CLI / GPT-5 (OpenAI OAuth 登录)
+  #   - Claude Code (Anthropic OAuth 登录)
+  #   - Gemini CLI (Google OAuth 登录)
+  #   - Qwen Code / iFlow (可选)
+  # 文档: https://help.router-for.me/cn/
+  # ----------------------------------------------------------
+  cliproxyapi:
+    image: eceasy/cli-proxy-api:latest
+    container_name: cliproxyapi
+    restart: unless-stopped
+    ports:
+      # API 服务端口，仅监听本地回环地址
+      - "127.0.0.1:9001:8317"
+      # OAuth 登录回调端口（登录时临时需要，登录完成后可注释掉）
+      # Codex (OpenAI) OAuth 回调
+      - "127.0.0.1:1455:1455"
+      # Claude OAuth 回调
+      - "127.0.0.1:54545:54545"
+      # Gemini OAuth 回调
+      - "127.0.0.1:8085:8085"
+    volumes:
+      # 配置文件
+      - ./config/cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml
+      # OAuth 凭据持久化目录（登录后的 token 存储在此）
+      - ./data/cliproxyapi/auth:/root/.cli-proxy-api
+      # 持久化数据目录（日志等）
+      - ./data/cliproxyapi/data:/app/data
+    environment:
+      # 时区设置
+      - TZ=${TZ:-Asia/Shanghai}
+      # 通过 Resin 代理池出站
+      - ALL_PROXY=http://resin:2260
+      - HTTP_PROXY=http://resin:2260
+      - HTTPS_PROXY=http://resin:2260
+      - NO_PROXY=localhost,127.0.0.1,mysql,redis,new-api,antigravity-manager,kiro2api,kirocli2api,cursor-api,copilot-api,resin
+    depends_on:
+      resin:
+        condition: service_started
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # cursor-api — Cursor IDE 逆向代理（wisdgod/cursor-api）
+  # 覆盖模型:
+  #   - Claude Sonnet 4.5 / Opus 4.5 (Anthropic)
+  #   - GPT-4o / GPT-5.3 (OpenAI)
+  #   - cursor-small (Cursor 自研)
+  # 特性:
+  #   - 内置 Token 池管理（通过 /tokens API 管理）
+  #   - 动态密钥生成（/build-key）
+  #   - Web 管理前端
+  #   - Rust 编写，极低资源占用（~5MB 镜像）
+  # 认证方式:
+  #   使用 Cursor 账号的 WorkosCursorSessionToken
+  #   可通过 cursor-auto-register 批量注册获取
+  # ----------------------------------------------------------
+  cursor-api:
+    image: wisdgod/cursor-api:latest
+    container_name: cursor-api
+    restart: unless-stopped
+    ports:
+      # API 服务端口，仅监听本地回环地址
+      - "127.0.0.1:9002:3000"
+    volumes:
+      # 持久化数据目录（Token 缓存、运行时状态）
+      - ./data/cursor-api:/app/data
+      # 配置文件（share_token、dynamic_key_secret 等）
+      - ./config/cursor-api/config.toml:/app/config.toml
+    environment:
+      # 访问密钥，用于鉴权中转请求
+      - AUTH_TOKEN=${CURSOR_API_AUTH_TOKEN}
+      # 动态密钥前缀
+      - KEY_PREFIX=sk-
+      # 默认指令
+      - DEFAULT_INSTRUCTIONS=
+      # 服务超时（秒）
+      - SERVICE_TIMEOUT=120
+      # 时区
+      - GENERAL_TIMEZONE=${TZ:-Asia/Shanghai}
+      # 调试模式
+      - DEBUG=false
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # kiro2api — Amazon Kiro IDE 逆向代理（caidaoli/kiro2api）
+  # 覆盖模型:
+  #   - Claude Sonnet 4.5 (Anthropic, 通过 Kiro 中转)
+  #   - Claude Sonnet 4 (Anthropic, 通过 Kiro 中转)
+  #   - Claude 3.7 Sonnet (Anthropic, 通过 Kiro 中转)
+  # 特性:
+  #   - 多账号令牌池（Social + IdC 混合认证）
+  #   - 顺序轮询 + 自动故障转移
+  #   - 自动刷新 AWS SSO Token
+  #   - 同时支持 OpenAI + Anthropic 协议
+  #   - Web 状态面板
+  # ----------------------------------------------------------
+  kiro2api:
+    image: ghcr.io/caidaoli/kiro2api:latest
+    container_name: kiro2api
+    restart: unless-stopped
+    ports:
+      # API 服务端口，仅监听本地回环地址
+      - "127.0.0.1:9003:8080"
+    volumes:
+      # AWS SSO 令牌缓存
+      - kiro_sso_cache:/home/appuser/.aws/sso/cache
+      # 认证配置文件（令牌池 JSON）
+      - ./config/kiro2api/auth_config.json:/app/auth_config.json
+    environment:
+      # 令牌池配置（JSON 数组或文件路径）
+      - KIRO_AUTH_TOKEN=/app/auth_config.json
+      # 下游客户端访问密钥
+      - KIRO_CLIENT_TOKEN=${KIRO2API_KEY}
+      # 服务端口
+      - PORT=8080
+      # Gin 框架模式
+      - GIN_MODE=release
+      # 日志级别
+      - LOG_LEVEL=info
+      # 通过 Resin 代理池出站访问 AWS 服务
+      - ALL_PROXY=http://resin:2260
+      - HTTP_PROXY=http://resin:2260
+      - HTTPS_PROXY=http://resin:2260
+      - NO_PROXY=localhost,127.0.0.1,mysql,redis,new-api,antigravity-manager,cliproxyapi,cursor-api,kirocli2api,copilot-api,resin
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      resin:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # kirocli2api — Amazon Kiro CLI 逆向代理（HenryXiaoYang/kirocli2api）
+  # 覆盖模型:
+  #   - Claude Sonnet 4.5 / Sonnet 4 / 3.7 Sonnet (通过 Amazon Q 中转)
+  # 特性:
+  #   - 基于 Kiro CLI 的 OIDC Refresh Token 认证（区别于 kiro2api 的 Social/IdC）
+  #   - 多账号 CSV/API 令牌池，轮询 + 自动故障转移
+  #   - 自动刷新 AWS SSO Access Token
+  #   - 同时支持 OpenAI + Anthropic 协议
+  #   - Tool Calling + Thinking 标签解析
+  # ----------------------------------------------------------
+  kirocli2api:
+    build:
+      context: ./2api/kirocli2api
+      dockerfile: Dockerfile
+    image: kirocli2api:local
+    container_name: kirocli2api
+    restart: unless-stopped
+    ports:
+      # API 服务端口，仅监听本地回环地址
+      - "127.0.0.1:9004:4000"
+    volumes:
+      # 账号池配置（CSV 格式）
+      - ./config/kirocli2api/accounts.csv:/app/resources/accounts.csv
+      # 持久化数据目录（令牌缓存等）
+      - ./data/kirocli2api:/app/data
+    environment:
+      # 服务端口
+      - PORT=4000
+      # Gin 框架模式
+      - GIN_MODE=release
+      # 下游客户端访问密钥
+      - BEARER_TOKEN=${KIROCLI2API_KEY}
+      # Amazon Q 服务端点
+      - AMAZON_Q_URL=https://q.us-east-1.amazonaws.com
+      # OIDC 令牌刷新端点
+      - OIDC_URL=https://oidc.us-east-1.amazonaws.com/token
+      # 账号池 CSV 路径（容器内路径）
+      - ACCOUNTS_CSV_PATH=resources/accounts.csv
+      # 同时激活的令牌数
+      - ACTIVE_TOKEN_COUNT=${KIROCLI2API_ACTIVE_TOKEN_COUNT:-5}
+      # 刷新失败最大重试次数
+      - MAX_REFRESH_ATTEMPT=5
+      # 账号来源: csv 或 api
+      - ACCOUNT_SOURCE=csv
+      # 通过 Resin 代理池出站访问 AWS 服务
+      - ALL_PROXY=http://resin:2260
+      - HTTP_PROXY=http://resin:2260
+      - HTTPS_PROXY=http://resin:2260
+      - PROXY_URL=http://resin:2260
+      - NO_PROXY=localhost,127.0.0.1,mysql,redis,new-api,antigravity-manager,cliproxyapi,cursor-api,kiro2api,copilot-api,resin
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      resin:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # copilot-api — GitHub Copilot 逆向代理（ericc-ch/copilot-api）
+  # 覆盖模型:
+  #   - GPT-4o / GPT-4.1 / GPT-5.3 (OpenAI, 通过 Copilot 中转)
+  #   - Claude Sonnet 4.5 (Anthropic, 通过 Copilot 中转)
+  #   - Gemini Pro (Google, 通过 Copilot 中转)
+  #   - o1-preview / o3 (推理模型, 通过 Copilot 中转)
+  # 特性:
+  #   - OAuth 自动令牌刷新
+  #   - 同时支持 OpenAI + Anthropic 协议
+  #   - 内置用量统计面板 (/usage)
+  # 认证方式:
+  #   使用 GitHub 个人访问令牌（需有 Copilot 订阅）
+  #   通过 `npx copilot-api@latest auth --show-token` 获取
+  # ----------------------------------------------------------
+  copilot-api:
+    image: ghcr.io/bouquet2/copilot-api-docker:latest
+    container_name: copilot-api
+    restart: unless-stopped
+    ports:
+      # API 服务端口，仅监听本地回环地址
+      - "127.0.0.1:9008:4141"
+    volumes:
+      # 持久化 GitHub Token（避免重启后需重新认证）
+      - ./data/copilot-api:/root/.local/share/copilot-api
+    environment:
+      # GitHub OAuth Token（通过 npx copilot-api@latest auth 获取）
+      - GH_TOKEN=${COPILOT_GH_TOKEN}
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4141/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # codex-proxy — Codex 流式重试代理
+  # 功能:
+  #   - 缓冲 chatgpt.com 的 SSE 流，等待 response.completed
+  #   - 流中途断开 → 返回 502 → new-api 自动重试其他渠道
+  #   - 缓冲超过 512KB/60s 自动切换直通模式
+  # ----------------------------------------------------------
+  codex-proxy:
+    build:
+      context: ./2api/gpt_team/codex-proxy
+      dockerfile: Dockerfile
+    image: codex-proxy:local
+    container_name: codex-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9006:9006"
+    environment:
+      - UPSTREAM_URL=https://chatgpt.com
+      - PROXY_URL=http://${RESIN_PROXY_TOKEN}:@resin:2260
+      - PASSTHROUGH_BYTES=32768
+      - PASSTHROUGH_SECS=10
+      - READ_TIMEOUT=300
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      resin:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9006/__codex_proxy_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # gpt-register — OpenAI 账号自动注册 + Token 自动注入 CLIProxyAPI
+  # 功能:
+  #   - 自动批量注册 OpenAI 账号（临时邮箱 + OAuth）
+  #   - 获取 Codex OAuth Token（refresh_token + access_token）
+  #   - 自动注入到 CLIProxyAPI auth 目录，无需手动操作
+  #   - 3 线程并发注册，失败自动重试
+  # 注意:
+  #   - 需要代理（通过 resin 或自定义 PROXY_URL）
+  #   - 默认不自动启动，需手动 docker compose up gpt-register
+  #   - profiles: [tools] 表示不会随 docker compose up 一起启动
+  # ----------------------------------------------------------
+  gpt-register:
+    build:
+      context: ./2api/gpt_team/gpt-register
+      dockerfile: Dockerfile
+    image: gpt-register:local
+    container_name: gpt-register
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GPT_REGISTER_DASHBOARD_PORT:-9005}:9005"
+    volumes:
+      # 注册输出目录（token JSON + accounts.txt）
+      - ./data/gpt-register/output:/app/output
+      # 共享 CLIProxyAPI 的 auth 目录，注册完自动注入
+      - ./data/cliproxyapi/auth:/auth
+      # 源码热挂载（开发用，修改后重启容器即可生效）
+      - ./2api/gpt_team/gpt-register/dashboard.py:/app/dashboard.py
+      - ./2api/gpt_team/gpt-register/templates:/app/templates
+      - ./2api/gpt_team/gpt-register/register_api.py:/app/register_api.py
+      - ./2api/gpt_team/gpt-register/upgrade_team.py:/app/upgrade_team.py
+      - ./2api/gpt_team/gpt-register/extract_token.py:/app/extract_token.py
+      - ./2api/gpt_team/gpt-register/dom_extract.js:/app/dom_extract.js
+      - ./2api/gpt_team/gpt-register/inject.py:/app/inject.py
+      - ./2api/gpt_team/gpt-register/register.py:/app/register.py
+      - ./2api/gpt_team/manager.py:/app/manager.py
+    environment:
+      # 代理地址（通过 resin 代理池出站）
+      - PROXY_URL=${GPT_REGISTER_PROXY:-http://resin:2260}
+      # 注入目标目录
+      - AUTH_DIR=/auth
+      # 输出目录
+      - OUTPUT_DIR=/app/output
+      # 运行模式: register(注册+注入) | browser(浏览器自动化) | inject(仅注入) | watch(监控注入) | dashboard(Web面板)
+      - MODE=${GPT_REGISTER_MODE:-dashboard}
+      # 设置 ONCE=1 则只跑一轮
+      - ONCE=${GPT_REGISTER_ONCE:-}
+      # Dashboard 访问密码（留空则无需密码）
+      - GPT_REGISTER_DASHBOARD_PWD=${GPT_REGISTER_DASHBOARD_PWD:-}
+      # 允许的出口地区（逗号分隔，如 US,JP,SG，留空则不限制）
+      - ALLOWED_REGIONS=${GPT_REGISTER_ALLOWED_REGIONS:-}
+      # Dashboard 启动注册时使用的引擎: http | browser
+      - REG_MODE=${GPT_REGISTER_REG_MODE:-browser}
+      # LLM 配置（浏览器自动化模式需要）
+      - LLM_BASE_URL=${GPT_REGISTER_LLM_BASE_URL:-http://new-api:3000/v1}
+      - LLM_API_KEY=${GPT_REGISTER_LLM_API_KEY:-}
+      - LLM_MODEL=${GPT_REGISTER_LLM_MODEL:-gpt-4o}
+      # MySQL（用于添加 new-api 渠道）
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=root
+      - MYSQL_PASS=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DB=${MYSQL_DATABASE:-newapi}
+      # CLIProxyAPI（manager.py 需要）
+      - CLIPROXYAPI_URL=http://cliproxyapi:8317
+      - CLIPROXYAPI_MGMT_KEY=${CLIPROXYAPI_MGMT_KEY}
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # gpt-manager — ChatGPT 账号全自动管理（注册 + 健康检查 + 池维护）
+  # 功能:
+  #   - 通过 GPTMail 临时邮箱 API 接收验证码，全自动注册
+  #   - 注册后自动注入 CLIProxyAPI auth + new-api 渠道
+  #   - 定期健康检查，自动清理失效账号
+  #   - 维持目标池大小，低于阈值自动补充
+  # ----------------------------------------------------------
+  gpt-manager:
+    build:
+      context: ./2api/gpt_team/gpt-register
+      dockerfile: Dockerfile
+    image: gpt-manager:local
+    container_name: gpt-manager
+    restart: unless-stopped
+    volumes:
+      # 注册输出目录
+      - ./data/gpt-register/output:/app/output
+      # 共享 CLIProxyAPI 的 auth 目录
+      - ./data/cliproxyapi/auth:/auth
+      # 源码挂载
+      - ./2api/gpt_team/manager.py:/app/manager.py
+      - ./2api/gpt_team/gpt-register/inject.py:/app/gpt-register/inject.py
+    entrypoint: ["python", "-u", "/app/manager.py"]
+    environment:
+      # CLIProxyAPI 管理 API
+      - CLIPROXYAPI_URL=http://cliproxyapi:8317
+      - CLIPROXYAPI_MGMT_KEY=${CLIPROXYAPI_MGMT_KEY}
+      # GPTMail 临时邮箱 API
+      - GPTMAIL_API_KEY=${GPTMAIL_API_KEY:-gpt-test}
+      # 目标账号池大小
+      - MANAGER_TARGET=${MANAGER_TARGET:-100}
+      # 代理（通过 resin 代理池出站）
+      - PROXY_URL=http://${RESIN_PROXY_TOKEN}:@resin:2260
+      # 注入目标目录
+      - AUTH_DIR=/auth
+      - OUTPUT_DIR=/app/output
+      # MySQL（用于添加 new-api 渠道）
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=root
+      - MYSQL_PASS=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DB=${MYSQL_DATABASE:-newapi}
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      resin:
+        condition: service_started
+    networks:
+      - api-network
+
+  # ----------------------------------------------------------
+  # cursor-register — Cursor 自动注册 + Token 管理
+  # 功能:
+  #   - 自动批量注册 Cursor 账号
+  #   - 提取 WorkosCursorSessionToken
+  #   - Web 管理面板查看/导出账号
+  #   - 邮箱验证码自动/手动获取
+  # 前置要求:
+  #   - 需要域名配置 Cloudflare Email Routing（自动模式）
+  #   - 或使用 WEB 模式手动输入验证码（无需域名）
+  # ----------------------------------------------------------
+  cursor-register:
+    build:
+      context: ./tools/cursor-auto-register
+      dockerfile: Dockerfile
+    image: cursor-auto-register:local
+    container_name: cursor-register
+    restart: unless-stopped
+    ports:
+      # Web 管理面板 + API，仅监听本地回环地址
+      - "127.0.0.1:9010:8000"
+    volumes:
+      # 持久化数据（账号数据库、日志）
+      - ./data/cursor-register:/app/data
+      # 环境变量配置
+      - ./config/cursor-register/.env:/app/.env
+    environment:
+      # 浏览器配置（容器内 Chromium）
+      - BROWSER_HEADLESS=True
+      - DYNAMIC_USERAGENT=True
+      # API 服务配置
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      # 数据库路径（持久化卷内）
+      - DATABASE_URL=sqlite+aiosqlite:///./data/accounts.db
+      # 最大已激活账号数
+      - MAX_ACCOUNTS=${CURSOR_REGISTER_MAX_ACCOUNTS:-10}
+      # 时区
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - api-network
+
+  # ==========================================================
+  # resin — 代理池网关（替代 warp-socks）
+  # ----------------------------------------------------------
+  # 功能说明:
+  #   聚合机场订阅（Clash/sing-box/SS/VMess/Trojan 等）为统一
+  #   HTTP 代理出口。支持智能路由、健康检查、粘性会话（每个
+  #   账号绑定固定出站 IP，降低风控封号风险）。
+  #   部署后通过 Web 面板 (端口 2260) 添加机场订阅链接。
+  # ==========================================================
+  resin:
+    image: ghcr.io/resinat/resin:latest
+    container_name: resin
+    restart: unless-stopped
+    ports:
+      # 仅本地访问，服务器上由 Nginx 反代到 /resin/ 路径
+      - "127.0.0.1:2260:2260"
+    environment:
+      # Web 管理面板密码
+      - RESIN_ADMIN_TOKEN=${RESIN_ADMIN_TOKEN}
+      # 代理访问凭证（容器通过此 token 使用代理）
+      - RESIN_PROXY_TOKEN=${RESIN_PROXY_TOKEN}
+      # 监听地址与端口
+      - RESIN_LISTEN_ADDRESS=0.0.0.0
+      - RESIN_PORT=2260
+    volumes:
+      # 持久化：缓存、状态、日志
+      - ./data/resin/cache:/var/cache/resin
+      - ./data/resin/state:/var/lib/resin
+      - ./data/resin/log:/var/log/resin
+    networks:
+      - api-network
+
+# ==============================================================
+# 命名卷
+# ==============================================================
+volumes:
+  kiro_sso_cache:
+    driver: local
+
+# ==============================================================
+# 外部网络声明
+# api-network 由主 docker-compose.yml 创建并管理
+# ==============================================================
+networks:
+  api-network:
+    external: true
+    name: api-relay_api-network

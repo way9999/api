@@ -1,0 +1,132 @@
+# ============================================================
+# 渡屿AI Gateway — Caddy 反向代理配置（本地/隧道模式）
+# HTTP only，不启用自动 TLS
+# 配合 Cloudflare Tunnel 使用（由 CF 负责 TLS 终止）
+# ============================================================
+
+{
+	auto_https off
+	servers {
+		protocols h1 h2 h2c
+	}
+}
+
+:80 {
+
+	# ---------- 安全响应头 ----------
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# 请求体大小限制 100MB
+	request_body {
+		max_size 100MB
+	}
+
+	# ---------- Chat UI 静态文件 ----------
+	redir /chat /chat/ 302
+
+	handle_path /chat/* {
+		root * /srv/chat-ui
+		file_server
+		try_files {path} {path}/ /index.html
+	}
+
+	# ---------- Resin 代理池管理面板 ----------
+	handle_path /resin/* {
+		reverse_proxy resin:2260 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			flush_interval -1
+		}
+	}
+
+	# ---------- Antigravity 账号管理面板 ----------
+	handle_path /antigravity/* {
+		reverse_proxy antigravity-manager:8045 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			flush_interval -1
+		}
+	}
+
+	# ---------- SSE 流式传输优化（/v1/responses） ----------
+	handle /v1/responses* {
+		reverse_proxy new-api:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up Connection ""
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+
+	# ---------- 注册面板（/register/ 路径） ----------
+	handle_path /register/* {
+		reverse_proxy gpt-register:9005 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+
+	# ---------- WebSocket 支持 ----------
+	handle /ws/* {
+		reverse_proxy gpt-register:9005 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+
+	# ---------- New API 首页（注入 Chat UI 入口） ----------
+	handle / {
+		reverse_proxy new-api:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up Connection ""
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+		replace </body> "<script src=\"/chat/home-entry.js?v=20260317-utf8-2\"></script></body>"
+	}
+
+	# ---------- 默认：反代到 New API ----------
+	handle {
+		reverse_proxy new-api:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up Connection ""
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+}

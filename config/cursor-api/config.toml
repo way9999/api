@@ -1,0 +1,33 @@
+# ============================================================
+# Cursor API 配置文件 (wisdgod/cursor-api)
+# 详细文档: https://github.com/wisdgod/cursor-api
+# ============================================================
+
+# 共享认证令牌（仅限 Chat 端点使用，留空禁用）
+# share_token = ""
+
+# 长上下文模式（启用后支持更长的对话上下文）
+# long_context_enabled = false
+
+# 图片处理方式: "none" | "base64" | "all"
+# base64: 仅支持 base64 编码图片（推荐，不暴露服务器 IP）
+# all: 支持 HTTP URL 图片（注意：可能暴露服务器 IP）
+# vision_ability = "base64"
+
+# 模型用量检查: "none" | "default" | "all" | "model1,model2"
+# default: 仅检查默认模型配额
+# all: 检查所有模型配额
+# model_usage_checks = "default"
+
+# 动态密钥签名密钥（留空禁用动态密钥功能）
+# 生成方式: openssl rand -hex 64
+# dynamic_key_secret = ""
+
+# Web 引用（在响应中包含网页引用）
+# web_references_included = false
+
+# 模拟平台: "Windows" | "macOS" | "Linux"
+# emulated_platform = "macOS"
+
+# Cursor 客户端版本号
+# cursor_client_version = "2.0.0"

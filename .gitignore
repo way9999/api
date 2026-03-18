@@ -1,0 +1,17 @@
+# 敏感配置
+.env
+
+# 数据目录
+data/
+
+# 临时文件
+.tmp/
+*.tar
+*.tar.gz
+*.zip
+tmp_*.json
+tmp_*.txt
+
+# Docker
+Caddyfile.active
+Caddyfile.deploy

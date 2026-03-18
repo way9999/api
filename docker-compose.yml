@@ -1,0 +1,152 @@
+# ============================================================
+# API 中转站 / 网关核心服务编排
+# 基于 New API (calciumion/new-api) 聚合网关
+# MySQL 8.0 + Redis 7
+# ============================================================
+# 所有服务端口仅绑定 127.0.0.1，由 Nginx 负责对外暴露访问
+# 敏感配置项统一通过 .env 文件注入，请勿在此文件中硬编码密码
+# ============================================================
+
+# --------------------------------------------------
+# 服务定义
+# --------------------------------------------------
+services:
+
+  # ================================================
+  # MySQL 8.0 - 主数据库
+  # 存储 New API 的用户、渠道、令牌、日志等核心数据
+  # ================================================
+  mysql:
+    image: mysql:8.0
+    container_name: api-mysql
+    restart: unless-stopped
+    # 端口不暴露到宿主机，仅通过 Docker 内部网络访问
+    environment:
+      # root 密码从 .env 文件读取
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # 自动创建 New API 所需的数据库
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-new_api}
+      # 设置默认字符集为 utf8mb4，完整支持 Unicode（含 emoji）
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    command:
+      # MySQL 启动参数：强制使用 utf8mb4 字符集与排序规则
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 默认使用 MySQL 8.0 原生密码认证插件，兼容性更好
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      # 命名卷持久化数据库文件，防止容器重建后数据丢失
+      - mysql_data:/var/lib/mysql
+    networks:
+      - api-network
+    healthcheck:
+      # 健康检查：确保 MySQL 完全就绪后再允许依赖服务启动
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ================================================
+  # Redis 7 - 缓存与会话存储
+  # 用于 New API 的缓存加速、速率限制、会话管理等
+  # ================================================
+  redis:
+    image: redis:7
+    container_name: api-redis
+    restart: unless-stopped
+    # 端口不暴露到宿主机，仅通过 Docker 内部网络访问
+    command:
+      # 开启 AOF 持久化，保障数据在重启后不丢失
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      # 命名卷持久化 Redis 数据
+      - redis_data:/data
+    networks:
+      - api-network
+    healthcheck:
+      # 健康检查：确保 Redis 可正常响应 PING 命令
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ================================================
+  # New API - 聚合网关主服务
+  # calciumion/new-api：支持多种大模型 API 的管理与中转
+  # 提供统一的 API 接口、令牌管理、用量统计、渠道负载均衡
+  # ================================================
+  new-api:
+    image: calciumion/new-api:latest
+    container_name: api-new-api
+    restart: unless-stopped
+    ports:
+      # 仅监听本机回环地址，由 Nginx 反向代理对外提供 HTTPS 访问
+      - "127.0.0.1:3000:3000"
+    environment:
+      # ---- 数据库连接 ----
+      # DSN 格式：用户名:密码@tcp(主机:端口)/数据库名?参数
+      SQL_DSN: root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE:-new_api}?charset=utf8mb4&parseTime=True&loc=Local
+      # ---- Redis 连接 ----
+      REDIS_CONN_STRING: redis://redis:6379
+      # ---- 安全配置 ----
+      # 会话密钥，用于加密 Cookie / Session，务必设置为高强度随机字符串
+      SESSION_SECRET: ${SESSION_SECRET}
+      # 初始 root 用户访问令牌（首次部署时生效，后续可在面板中修改）
+      INITIAL_ROOT_TOKEN: ${INITIAL_ROOT_TOKEN}
+      # ---- 运行时配置 ----
+      TZ: ${TZ:-Asia/Shanghai}
+      # ---- 渠道调优 ----
+      # 上游失败时自动重试其他渠道（默认0不重试）
+      RETRY_TIMES: 3
+      # SSE 流式空闲超时，匹配 nginx 的 600s
+      STREAMING_TIMEOUT: 600
+      # 每 120 秒自动测试渠道健康状态，自动禁用/恢复
+      CHANNEL_TEST_FREQUENCY: 120
+      # 批量更新 quota，减少 DB 写入压力
+      BATCH_UPDATE_ENABLED: true
+      # 配置同步间隔 60s
+      SYNC_FREQUENCY: 60
+    depends_on:
+      # 确保 MySQL 和 Redis 健康检查通过后才启动 New API
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # 持久化 New API 的本地数据（如日志、上传文件等，视版本而定）
+      - new_api_data:/data
+    networks:
+      - api-network
+
+# --------------------------------------------------
+# 命名卷定义
+# 使用 Docker 命名卷统一管理持久化数据，便于备份与迁移
+# --------------------------------------------------
+volumes:
+  # MySQL 数据库文件
+  mysql_data:
+    driver: local
+  # Redis 持久化数据（AOF / RDB）
+  redis_data:
+    driver: local
+  # New API 应用数据
+  new_api_data:
+    driver: local
+
+# --------------------------------------------------
+# 网络定义
+# 所有服务处于同一 bridge 网络中，通过服务名互相访问
+# --------------------------------------------------
+networks:
+  api-network:
+    driver: bridge
+    name: api-relay_api-network

@@ -1,0 +1,21 @@
+# ============================================================
+# Cloudflare Tunnel 编排（可选）
+# 无公网 IP 时使用，由 Cloudflare 负责 TLS 终止
+# 使用前需在 Cloudflare Zero Trust 创建 Tunnel 并获取 Token
+# ============================================================
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: api-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - api-network
+
+networks:
+  api-network:
+    external: true
+    name: api-relay_api-network

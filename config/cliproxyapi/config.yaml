@@ -1,0 +1,69 @@
+# ============================================================
+# CLIProxyAPI 配置文件
+# 文档: https://help.router-for.me/cn/configuration/basic
+# ============================================================
+
+# 服务监听地址
+host: "0.0.0.0"
+port: 8317
+
+# 认证目录（OAuth 凭据存储位置）
+auth-dir: "/root/.cli-proxy-api"
+
+# 下游客户端访问密钥
+api-keys:
+  - "${CLIPROXYAPI_KEY}"
+
+# 调试日志
+debug: false
+
+# 全局代理（通过 resin 代理池出站）
+proxy-url: ""
+
+# 请求重试次数
+request-retry: 3
+
+# 多凭据路由策略: round-robin | fill-first
+routing:
+  strategy: "round-robin"
+
+# 配额超限自动切换
+quota-exceeded:
+  switch-project: true
+  switch-preview-model: true
+
+# --- Codex (GPT) 配置 ---
+# 通过 OAuth 登录获取凭据后自动生效
+# 登录命令: docker compose -f docker-compose.reverse.yml exec cliproxyapi /CLIProxyAPI/CLIProxyAPI --codex-login --no-browser
+# 登录后凭据保存在 auth-dir 中，支持热重载
+
+# --- Claude Code 配置 ---
+# 登录命令: docker compose -f docker-compose.reverse.yml exec cliproxyapi /CLIProxyAPI/CLIProxyAPI --claude-login --no-browser
+
+# --- 如果你有 Codex API Key，也可以直接配置 ---
+# codex-api-key:
+#   - api-key: "sk-your-codex-api-key"
+#     # base-url: "https://api.openai.com"  # 默认官方端点
+#     # proxy-url: "socks5://proxy:1080"    # 可选单独代理
+
+# --- 如果你有 Claude API Key ---
+# claude-api-key:
+#   - api-key: "sk-your-claude-api-key"
+
+# --- OpenAI 兼容提供商（如 OpenRouter）---
+# openai-compatibility:
+#   - name: "openrouter"
+#     base-url: "https://openrouter.ai/api/v1"
+#     api-key-entries:
+#       - api-key: "sk-or-v1-xxx"
+#     models:
+#       - name: "openai/gpt-4o"
+#         alias: "gpt-4o"
+
+# 流式传输配置
+streaming:
+  keepalive-seconds: 15
+  bootstrap-retries: 1
+
+# 管理 API 密钥（manager.py 用于上传/删除 auth 文件、健康检查）
+management-key: "${CLIPROXYAPI_MGMT_KEY}"

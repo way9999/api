@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat Workspace</title>
+  <link rel="stylesheet" href="./styles.css?v=20260318-ui-2">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-lockup">
+          <span class="brand-mark">AI</span>
+          <div>
+            <p class="brand-overline">Workspace</p>
+            <h1>Chat Console</h1>
+          </div>
+        </div>
+        <button class="ghost-icon mobile-only" id="closeSidebarButton" type="button" aria-label="Close sidebar">&times;</button>
+      </div>
+
+      <div class="sidebar-tools">
+        <button class="primary-button" id="newChatButton" type="button">New Chat</button>
+        <button class="ghost-button" id="openSettingsButton" type="button">Connection Settings</button>
+      </div>
+
+      <section class="sidebar-section">
+        <div class="section-head">
+          <span>Threads</span>
+          <span class="section-meta" id="threadCountLabel">0</span>
+        </div>
+        <div class="thread-list" id="threadList"></div>
+      </section>
+
+      <section class="sidebar-section sidebar-footer">
+        <div class="section-head">
+          <span>Current Mode</span>
+        </div>
+        <div class="mode-summary" id="modeSummary"></div>
+      </section>
+    </aside>
+
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <main class="workspace">
+      <header class="workspace-topbar">
+        <div class="topbar-main">
+          <button class="ghost-icon mobile-only" id="openSidebarButton" type="button" aria-label="Open sidebar">&#9776;</button>
+          <div>
+            <p class="eyebrow" id="topbarModeLabel">Guest Mode</p>
+            <h2 id="conversationTitle">New Conversation</h2>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <label class="model-picker">
+            <span>Model</span>
+            <select id="modelSelect"></select>
+          </label>
+          <button class="ghost-button compact" id="refreshModelsButton" type="button">Refresh Models</button>
+          <button class="ghost-button compact" id="settingsButton" type="button">Settings</button>
+        </div>
+      </header>
+
+      <section class="account-banner hidden" id="accountBanner"></section>
+
+      <section class="message-surface" id="messageSurface">
+        <div class="welcome-state" id="welcomeState">
+          <div class="welcome-copy">
+            <p class="eyebrow">Chat Workspace</p>
+            <h3>A dual-mode chat interface modeled after the ChatGPT web app</h3>
+            <p>
+              Sign in with your new-api account to use your own balance and tokens,
+              or switch to guest mode and provide URL, key, and model manually.
+            </p>
+          </div>
+          <div class="prompt-grid">
+            <button class="prompt-card" type="button" data-prompt="Summarize this week's key work items and rank them by priority.">
+              Weekly work summary
+            </button>
+            <button class="prompt-card" type="button" data-prompt="Rewrite the following API documentation so it is easier for frontend developers to integrate.">
+              Rewrite API docs
+            </button>
+            <button class="prompt-card" type="button" data-prompt="Review the architecture of a web chat system that supports streaming responses.">
+              Review system design
+            </button>
+            <button class="prompt-card" type="button" data-prompt="Write a more professional and concise product release announcement.">
+              Polish release note
+            </button>
+          </div>
+        </div>
+        <div class="message-list" id="messageList"></div>
+      </section>
+
+      <form class="composer-shell" id="composerForm">
+        <div class="composer-meta">
+          <span id="statusPill" class="status-pill">Ready</span>
+          <span id="credentialHint" class="credential-hint"></span>
+        </div>
+        <div class="composer-row">
+          <textarea
+            id="composerInput"
+            rows="1"
+            placeholder="Type a message. Enter to send, Shift + Enter for a new line"
+          ></textarea>
+          <div class="composer-actions">
+            <button class="ghost-button compact" id="stopButton" type="button" disabled>Stop</button>
+            <button class="primary-button compact" id="sendButton" type="submit">Send</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <aside class="settings-panel" id="settingsPanel" aria-hidden="true">
+    <div class="settings-header">
+      <div>
+        <p class="eyebrow">Connection</p>
+        <h3>Identity and Routing</h3>
+      </div>
+      <button class="ghost-icon" id="closeSettingsButton" type="button" aria-label="Close settings">&times;</button>
+    </div>
+
+    <section class="settings-section">
+      <div class="section-head">
+        <span>Mode</span>
+      </div>
+      <div class="mode-switch" id="modeSwitch">
+        <button class="mode-tile" type="button" data-mode="account">
+          <strong>Account Login</strong>
+          <span>Use the new-api account, balance, and personal token</span>
+        </button>
+        <button class="mode-tile" type="button" data-mode="guest">
+          <strong>Guest Mode</strong>
+          <span>Fill in URL, key, and model manually</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="settings-section" id="accountSection">
+      <div class="section-head">
+        <span>Account Login</span>
+        <span class="section-meta">Same-origin preferred</span>
+      </div>
+      <label class="field">
+        <span>new-api site</span>
+        <input id="accountBaseInput" type="url" placeholder="https://chat.example.com">
+      </label>
+      <form class="stack-form" id="accountLoginForm">
+        <label class="field">
+          <span>Username</span>
+          <input id="accountUsernameInput" type="text" autocomplete="username" placeholder="root">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="accountPasswordInput" type="password" autocomplete="current-password" placeholder="Enter account password">
+        </label>
+        <div class="action-row">
+          <button class="primary-button compact" type="submit">Sign In</button>
+          <button class="ghost-button compact" id="accountSessionButton" type="button">Check Session</button>
+          <button class="ghost-button compact" id="accountLogoutButton" type="button">Sign Out</button>
+        </div>
+      </form>
+      <div class="account-card" id="accountInfoCard"></div>
+      <label class="field">
+        <span>Credential</span>
+        <select id="accountTokenSelect"></select>
+      </label>
+      <p class="field-hint">
+        The default uses the user access token. If you have your own personal key, you can switch to it here.
+      </p>
+    </section>
+
+    <section class="settings-section" id="guestSection">
+      <div class="section-head">
+        <span>Guest Mode</span>
+      </div>
+      <label class="field">
+        <span>API Base URL</span>
+        <input id="guestApiBaseInput" type="url" placeholder="https://chat.example.com/v1">
+      </label>
+      <label class="field">
+        <span>API Key</span>
+        <input id="guestApiKeyInput" type="password" placeholder="sk-...">
+      </label>
+      <label class="field">
+        <span>Model Name</span>
+        <input id="guestModelInput" type="text" placeholder="gpt-4o-mini">
+      </label>
+      <p class="field-hint">
+        If you provide only the domain, the page will automatically append `/v1`.
+      </p>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-head">
+        <span>Generation</span>
+      </div>
+      <label class="field">
+        <span>System Prompt</span>
+        <textarea id="systemPromptInput" rows="4" placeholder="Optional: set a fixed assistant role or output style"></textarea>
+      </label>
+      <div class="field-grid">
+        <label class="field">
+          <span>Temperature</span>
+          <input id="temperatureInput" type="number" min="0" max="2" step="0.1">
+        </label>
+        <label class="field">
+          <span>Max Tokens</span>
+          <input id="maxTokensInput" type="number" min="1" step="1" placeholder="Leave blank to let the server decide">
+        </label>
+      </div>
+      <label class="toggle-field">
+        <input id="streamToggle" type="checkbox">
+        <span>Use streaming output</span>
+      </label>
+    </section>
+  </aside>
+
+  <div class="panel-backdrop" id="panelBackdrop"></div>
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="./app.js?v=20260318-ui-6"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+[
+  {
+    "auth": "Social",
+    "refreshToken": "YOUR_KIRO_SOCIAL_REFRESH_TOKEN_1",
+    "disabled": false
+  },
+  {
+    "auth": "Social",
+    "refreshToken": "YOUR_KIRO_SOCIAL_REFRESH_TOKEN_2",
+    "disabled": true
+  },
+  {
+    "auth": "IdC",
+    "refreshToken": "YOUR_IDC_REFRESH_TOKEN",
+    "clientId": "YOUR_IDC_CLIENT_ID",
+    "clientSecret": "YOUR_IDC_CLIENT_SECRET",
+    "disabled": true
+  }
+]

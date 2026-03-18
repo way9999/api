@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+
+# Sensitive data
+config/accounts.json
+config/api_keys.json
+data/tokens.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Register tools
+ob1_register/
+ob1_register_http/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OMC
+.omc/

@@ -1,0 +1,44 @@
+# ============================================================
+# Caddy 反向代理服务编排
+# 替代 Nginx，提供自动 HTTPS + 反向代理
+# ============================================================
+
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: caddy-custom:local
+    container_name: api-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - MAIN_DOMAIN=${MAIN_DOMAIN:-localhost}
+      - REGISTER_DOMAIN=${REGISTER_DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./chat-ui:/srv/chat-ui:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - api-network
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  api-network:
+    external: true
+    name: api-relay_api-network
